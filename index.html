@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+    <title>WRF Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+```
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+<style>
+    html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #000;
+    }
+
+    #map {
+        width: 100%;
+        height: 100%;
+    }
+
+    .panel {
+        position: absolute;
+        background: rgba(20, 20, 20, 0.65);
+        backdrop-filter: blur(10px);
+        color: #fff;
+        padding: 12px;
+        border-radius: 12px;
+        font-family: sans-serif;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+        z-index: 1000;
+    }
+
+    .control-panel {
+        bottom: 5px;
+        left: 10px;
+        right: 10px;
+    }
+
+    .colorbar-panel {
+        bottom: 120px;
+        left: 10px;
+        width: 200px;
+    }
+
+    .colorbar-panel img {
+        width: 200px;
+        max-height: 50px;
+    }
+
+    .variable-panel {
+        top: 50px;
+        right: 10px;
+        width: 180px;
+        transition: all 0.3s ease;
+    }
+
+    .hidden {
+        opacity: 0;
+        transform: translateY(-10px);
+        pointer-events: none;
+    }
+
+    .toggle-btn {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: rgba(20,20,20,0.7);
+        color: #fff;
+        padding: 6px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        z-index: 1100;
+    }
+
+    .about-btn {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(20,20,20,0.7);
+        color: #fff;
+        padding: 6px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        z-index: 1100;
+    }
+
+    .var-item {
+        padding: 6px;
+        margin-top: 6px;
+        background: rgba(255,255,255,0.1);
+        border-radius: 6px;
+        cursor: pointer;
+        text-align: center;
+    }
+
+    .var-item:hover {
+        background: rgba(255,255,255,0.25);
+    }
+
+    .active {
+        background: #ff4d4d;
+        font-weight: bold;
+    }
+
+    input[type="range"] {
+        width: 100%;
+        margin-top: 8px;
+    }
+
+    .run-info {
+        font-size: 12px;
+        color: #ccc;
+        margin-top: 4px;
+    }
+
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 2000;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.7);
+    }
+
+    .modal-content {
+        background: #111;
+        color: #fff;
+        margin: 15% auto;
+        padding: 20px;
+        width: 80%;
+        max-width: 400px;
+        border-radius: 10px;
+        text-align: center;
+    }
+
+    .close-btn {
+        margin-top: 10px;
+        padding: 6px 12px;
+        background: #ff4d4d;
+        border: none;
+        color: #fff;
+        border-radius: 6px;
+        cursor: pointer;
+    }
+</style>
+
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="toggle-btn" onclick="togglePanel()">☰ Layers</div>
+<div class="about-btn" onclick="openModal()">ℹ️ About</div>
+
+<div class="panel colorbar-panel">
+    <img id="colorbar" src="">
+</div>
+
+<div class="panel control-panel">
+    <span id="timeLabel">--</span><br>
+    <input type="range" id="timeSlider" min="0" max="119" value="0" step="1">
+    <div class="run-info" id="runInfo"></div>
+</div>
+
+<div class="panel variable-panel hidden" id="variablePanel">
+    <b>Layers</b>
+
+
+<div class="var-item active" data-var="dbz">Reflectivity</div>
+<div class="var-item" data-var="rain">Rainfall</div>
+<div class="var-item" data-var="lcld">Low Clouds</div>
+<div class="var-item" data-var="mcld">Medium Clouds</div>
+<div class="var-item" data-var="hcld">High Clouds</div>
+<div class="var-item" data-var="tcld">Total Clouds</div>
+<div class="var-item" data-var="snow">Snow</div>
+<div class="var-item" data-var="hail">Hail</div>
+
+
+</div>
+
+<div id="aboutModal" class="modal">
+    <div class="modal-content">
+        <h3>WRF Dashboard</h3>
+        <p>WRF visualization tool for weather fields.</p>
+        <button class="close-btn" onclick="closeModal()">Close</button>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script src="config.js"></script>
+
+<script>
+
+var bounds = [
+    [30.794556, 72.07592],
+    [38.316467, 81.22196]
+];
+
+var map = L.map('map', {
+    center: [34, 76.65],
+    zoom: 7,
+    zoomControl: false,
+    attributionControl: false,
+    maxBounds: bounds,
+    maxBoundsViscosity: 1.0
+});
+
+L.tileLayer("https://mt0.google.com/vt/lyrs=p&x={x}&y={y}&z={z}").addTo(map);
+
+// Marker pane (always on top)
+map.createPane("markersPane");
+map.getPane("markersPane").style.zIndex = 650;
+
+// City markers
+const cities = [
+    { name: "Jammu", lat: 32.7266, lon: 74.8570 },
+    { name: "Udhampur", lat: 32.9253, lon: 75.1357 },
+    { name: "Srinagar", lat: 34.0837, lon: 74.7973 }
+];
+
+cities.forEach(city => {
+    L.circleMarker([city.lat, city.lon], {
+        pane: "markersPane",
+        radius: 6,
+        color: "#fff",
+        fillColor: "#ff4d4d",
+        fillOpacity: 1
+    }).addTo(map).bindTooltip(city.name);
+});
+
+// Variable names
+const variableNames = {
+    dbz: "Reflectivity",
+    rain: "Rainfall",
+    lcld: "Low Clouds",
+    mcld: "Medium Clouds",
+    hcld: "High Clouds",
+    tcld: "Total Clouds",
+    snow: "Snow",
+    hail: "Hail"
+};
+
+var overlay = null;
+var currentVariable = "dbz";
+
+function getFilePath(v, t) {
+    let n = String(t).padStart(3, '0');
+    if (v==="dbz") return `dbz/dbz_${n}.png`;
+    if (v==="rain") return `rain/rain_hourly_${n}.png`;
+    if (v==="lcld") return `cld_low/low_cloud_${n}.png`;
+    if (v==="mcld") return `cld_mid/mid_cloud_${n}.png`;
+    if (v==="hcld") return `cld_high/high_cloud_${n}.png`;
+    if (v==="tcld") return `cld_total/total_cloud_${n}.png`;
+    if (v==="snow") return `snow/snow_${n}.png`;
+    if (v==="hail") return `hail/hail_${n}.png`;
+}
+
+function getColorbarPath(v,t){
+    return getFilePath(v,t).replace(".png","_cbar.png");
+}
+
+function updateImage(t){
+    let img = getFilePath(currentVariable,t);
+    let cbar = getColorbarPath(currentVariable,t);
+
+    document.getElementById("colorbar").src = cbar;
+
+    let newOverlay = L.imageOverlay(img,bounds,{opacity:0}).addTo(map);
+
+    let op=0;
+    let fade=setInterval(()=>{
+        op+=0.25;
+        newOverlay.setOpacity(op);
+        if(op>=1){
+            clearInterval(fade);
+            if(overlay) map.removeLayer(overlay);
+            overlay=newOverlay;
+        }
+    },30);
+
+    let d=new Date(startTime);
+    d.setUTCHours(d.getUTCHours()+parseInt(t));
+
+    document.getElementById("timeLabel").innerHTML =
+        "<b>" + variableNames[currentVariable] + "</b><br>" + d.toUTCString();
+}
+
+// Events
+document.getElementById("timeSlider").addEventListener("input",e=>{
+    updateImage(e.target.value);
+});
+
+document.querySelectorAll(".var-item").forEach(el=>{
+    el.onclick=()=>{
+        document.querySelectorAll(".var-item").forEach(i=>i.classList.remove("active"));
+        el.classList.add("active");
+        currentVariable=el.dataset.var;
+        updateImage(document.getElementById("timeSlider").value);
+    };
+});
+
+function togglePanel(){
+    document.getElementById("variablePanel").classList.toggle("hidden");
+}
+
+// Modal
+function openModal(){
+    document.getElementById("aboutModal").style.display="block";
+    document.getElementById("aboutModal").style.zIndex = 10000;
+}
+function closeModal(){
+    document.getElementById("aboutModal").style.display="none";
+}
+
+window.onclick = function(e){
+    if(e.target === document.getElementById("aboutModal")){
+        closeModal();
+    }
+};
+
+document.addEventListener("keydown",e=>{
+    if(e.key==="Escape") closeModal();
+});
+
+document.getElementById("runInfo").innerText =
+    "Run based on: " + startTime.toUTCString();
+
+updateImage(0);
+
+</script>
+
+</body>
+</html>
